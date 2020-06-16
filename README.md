@@ -262,12 +262,9 @@ Run these commands to collect logs:
 
 #### Debugging through an IDE
 
-1. The following debugging configuration is for [Vscode](https://code.visualstudio.com/download).
-1. Delve is a debug tool for golang. Delve `version 1.3` or higher is required for the operator. It can be downloaded [here](https://github.com/go-delve/delve/tree/master/Documentation/installation) or using:
-
- `go get -u github.com/go-delve/delve/cmd/dlv`
-
-1. You will need a launch json for Vscode to interact with this headless mode of delve:
+- The following debugging configuration is for [Vscode](https://code.visualstudio.com/download).
+- Delve is a debug tool for golang. Delve `version 1.3` or higher is required for the operator. It can be downloaded [here](https://github.com/go-delve/delve/tree/master/Documentation/installation) or using: `go get -u github.com/go-delve/delve/cmd/dlv`.
+- You will need a launch json for Vscode to interact with this headless mode of delve:
 
   ```json
     {
@@ -288,8 +285,9 @@ Run these commands to collect logs:
     }
   ```
 
-1. Deploy `AuditLogging` CRD and CR.
-1. Start the Vscode debugger. Open the Debug console and you will see the standard output from the operator-sdk up local command. Your debugger will stop on the set breakpoints.
+- To start debugging:
+  1. Deploy `AuditLogging` CRD and CR.
+  1. Start the Vscode debugger. Open the Debug console and you will see the standard output from the operator-sdk up local command. Your debugger will stop on the set breakpoints.
 
 #### End-to-End testing
 

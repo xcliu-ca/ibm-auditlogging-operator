@@ -269,24 +269,24 @@ Run these commands to collect logs:
 
 1. You will need a launch json for Vscode to interact with this headless mode of delve:
 
-```json
-  {
-    "version": "0.2.0",
-    "configurations": [
-      {
-        "name": "IBM AuditLogging Operator",
-        "type": "go",
-        "request": "launch",
-        "mode": "auto",
-        "program": "${workspaceFolder}/cmd/manager/main.go",
-        "env": {
-          "WATCH_NAMESPACE": "ibm-common-services"
-        },
-        "args": []
-      }
-    ]
-  }
-```
+  ```json
+    {
+      "version": "0.2.0",
+      "configurations": [
+        {
+          "name": "IBM AuditLogging Operator",
+          "type": "go",
+          "request": "launch",
+          "mode": "auto",
+          "program": "${workspaceFolder}/cmd/manager/main.go",
+          "env": {
+            "WATCH_NAMESPACE": "ibm-common-services"
+          },
+          "args": []
+        }
+      ]
+    }
+  ```
 
 1. Deploy `AuditLogging` CRD and CR.
 1. Start the Vscode debugger. Open the Debug console and you will see the standard output from the operator-sdk up local command. Your debugger will stop on the set breakpoints.

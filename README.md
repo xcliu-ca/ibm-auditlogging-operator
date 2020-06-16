@@ -262,7 +262,7 @@ Run these commands to collect logs:
 
 Debugging through an IDE (Vscode):
 
-1. Delve is a debug tool for golang, it can be downloaded [here](https://github.com/go-delve/delve/tree/master/Documentation/installation) or by just using:
+1. Delve is a debug tool for golang. Delve `version 1.3` or higher is required for the operator. It can be downloaded [here](https://github.com/go-delve/delve/tree/master/Documentation/installation) or by just using:
 
  `go get -u github.com/go-delve/delve/cmd/dlv`
 

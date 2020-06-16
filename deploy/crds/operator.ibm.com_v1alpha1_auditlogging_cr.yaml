@@ -18,3 +18,5 @@ spec:
     pullPolicy: IfNotPresent
     verbosity: "0"
     frequency: "10"
+status:
+  nodes: []

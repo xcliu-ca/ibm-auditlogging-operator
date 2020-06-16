@@ -76,7 +76,7 @@ func BuildDeploymentForPolicyController(instance *operatorv1alpha1.AuditLogging)
 	deploy := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      AuditPolicyControllerDeploy,
-			Namespace: InstanceNamespace,
+			Namespace: instance.Namespace,
 			Labels:    metaLabels,
 		},
 		Spec: appsv1.DeploymentSpec{
@@ -157,7 +157,7 @@ func BuildDaemonForFluentd(instance *operatorv1alpha1.AuditLogging) *appsv1.Daem
 	daemon := &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      FluentdDaemonSetName,
-			Namespace: InstanceNamespace,
+			Namespace: instance.Namespace,
 			Labels:    metaLabels,
 		},
 		Spec: appsv1.DaemonSetSpec{

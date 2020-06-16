@@ -29,7 +29,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	extv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -78,9 +77,6 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		&corev1.ServiceAccount{},
 		&rbacv1.Role{},
 		&rbacv1.RoleBinding{},
-		&rbacv1.ClusterRole{},
-		&rbacv1.ClusterRoleBinding{},
-		&extv1beta1.CustomResourceDefinition{},
 		&corev1.Service{},
 	}
 	for _, restype := range secondaryResourceTypes {
@@ -134,15 +130,15 @@ func (r *ReconcileAuditLogging) Reconcile(request reconcile.Request) (reconcile.
 		return reconcile.Result{}, err
 	}
 
-	// Set a default Status value
-	if len(instance.Status.Nodes) == 0 {
-		instance.Status.Nodes = res.DefaultStatusForCR
-		err = r.client.Status().Update(context.TODO(), instance)
-		if err != nil {
-			reqLogger.Error(err, "Failed to set AuditLogging default status")
-			return reconcile.Result{}, err
-		}
-	}
+	// // Set a default Status value
+	// if len(instance.Status.Nodes) == 0 {
+	// 	instance.Status.Nodes = res.DefaultStatusForCR
+	// 	err = r.client.Status().Update(context.TODO(), instance)
+	// 	if err != nil {
+	// 		reqLogger.Error(err, "Failed to set AuditLogging default status")
+	// 		return reconcile.Result{}, err
+	// 	}
+	// }
 
 	var recResult reconcile.Result
 	var recErr error
@@ -153,13 +149,14 @@ func (r *ReconcileAuditLogging) Reconcile(request reconcile.Request) (reconcile.
 		r.reconcileServiceAccount,
 		r.reconcileClusterRole,
 		r.reconcileClusterRoleBinding,
-		r.reconcileAuditPolicyCRD,
+		r.reconcileAuditPolicyResources,
 		r.reconcilePolicyControllerDeployment,
 		r.reconcileRole,
 		r.reconcileRoleBinding,
 		r.reconcileService,
 		r.reconcileFluentdDaemonSet,
 		r.updateStatus,
+		r.checkIfBeingDeleted,
 	}
 	for _, rec := range reconcilers {
 		recResult, recErr = rec(instance)
@@ -180,15 +177,15 @@ func (r *ReconcileAuditLogging) Reconcile(request reconcile.Request) (reconcile.
 }
 
 func (r *ReconcileAuditLogging) updateStatus(instance *operatorv1alpha1.AuditLogging) (reconcile.Result, error) {
-	reqLogger := log.WithValues("Namespace", res.InstanceNamespace, "Name", instance.Name)
+	reqLogger := log.WithValues("Namespace", instance.Namespace, "Name", instance.Name)
 
 	podList := &corev1.PodList{}
 	listOpts := []client.ListOption{
-		client.InNamespace(res.InstanceNamespace),
+		client.InNamespace(instance.Namespace),
 		client.MatchingLabels(res.LabelsForSelector(res.FluentdName, instance.Name)),
 	}
 	if err := r.client.List(context.TODO(), podList, listOpts...); err != nil {
-		reqLogger.Error(err, "Failed to list pods", "AuditLogging.Namespace", res.InstanceNamespace, "AuditLogging.Name", instance.Name)
+		reqLogger.Error(err, "Failed to list pods", "AuditLogging.Namespace", instance.Namespace, "AuditLogging.Name", instance.Name)
 		return reconcile.Result{}, err
 	}
 	podNames := []string{}
@@ -198,11 +195,11 @@ func (r *ReconcileAuditLogging) updateStatus(instance *operatorv1alpha1.AuditLog
 
 	// Get audit-policy-controller pod too
 	listOpts = []client.ListOption{
-		client.InNamespace(res.InstanceNamespace),
+		client.InNamespace(instance.Namespace),
 		client.MatchingLabels(res.LabelsForSelector(res.AuditPolicyControllerDeploy, instance.Name)),
 	}
 	if err := r.client.List(context.TODO(), podList, listOpts...); err != nil {
-		reqLogger.Error(err, "Failed to list pods", "AuditLogging.Namespace", res.InstanceNamespace, "AuditLogging.Name", instance.Name)
+		reqLogger.Error(err, "Failed to list pods", "AuditLogging.Namespace", instance.Namespace, "AuditLogging.Name", instance.Name)
 		return reconcile.Result{}, err
 	}
 	for _, pod := range podList.Items {
@@ -221,4 +218,57 @@ func (r *ReconcileAuditLogging) updateStatus(instance *operatorv1alpha1.AuditLog
 		}
 	}
 	return reconcile.Result{}, nil
+}
+
+func (r *ReconcileAuditLogging) checkIfBeingDeleted(instance *operatorv1alpha1.AuditLogging) (reconcile.Result, error) {
+	reqLogger := log.WithValues("func", "checkIfBeingDeleted")
+	// Credit: kubebuilder book
+	finalizerName := "auditlogging.operator.ibm.com"
+	// Determine if the AuditLogging CR is going to be deleted
+	if instance.ObjectMeta.DeletionTimestamp.IsZero() {
+		// Object not being deleted, but add our finalizer so we know to remove this object later when it is going to be deleted
+		if !res.ContainsString(instance.ObjectMeta.Finalizers, finalizerName) {
+			instance.ObjectMeta.Finalizers = append(instance.ObjectMeta.Finalizers, finalizerName)
+			if err := r.client.Update(context.Background(), instance); err != nil {
+				reqLogger.Error(err, "Error adding the finalizer to the CR")
+				return reconcile.Result{}, err
+			}
+		}
+	} else {
+		// Object scheduled to be deleted
+		if res.ContainsString(instance.ObjectMeta.Finalizers, finalizerName) {
+			if err := r.deleteExternalResources(instance); err != nil {
+				reqLogger.Error(err, "Error deleting resources created by this operator")
+				return reconcile.Result{}, err
+			}
+			instance.ObjectMeta.Finalizers = res.RemoveString(instance.ObjectMeta.Finalizers, finalizerName)
+			if err := r.client.Update(context.Background(), instance); err != nil {
+				reqLogger.Error(err, "Error updating the CR to remove the finalizer")
+				return reconcile.Result{}, err
+			}
+			reqLogger.Info("Successfully deleted external resources")
+		}
+		return reconcile.Result{}, nil
+	}
+	return reconcile.Result{}, nil
+}
+
+func (r *ReconcileAuditLogging) deleteExternalResources(instance *operatorv1alpha1.AuditLogging) error {
+	// Remove CustomResource
+	if err := removePolicy(instance, r.client, res.DefaultAuditPolicyName); err != nil {
+		return err
+	}
+	// Remove CustomResourceDefinition
+	if err := removeCRD(r.client, res.AuditPolicyCRDName); err != nil {
+		return err
+	}
+	// Remove Cluster Role
+	if err := removeCR(r.client, res.AuditPolicyControllerDeploy+res.RolePostfix); err != nil {
+		return err
+	}
+	// Remove Cluster Role Binding
+	if err := removeCRB(r.client, res.AuditPolicyControllerDeploy+res.RoleBindingPostfix); err != nil {
+		return err
+	}
+	return nil
 }

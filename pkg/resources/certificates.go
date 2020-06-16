@@ -43,7 +43,7 @@ func BuildCertsForAuditLogging(instance *operatorv1alpha1.AuditLogging, issuer s
 	certificate := &certmgr.Certificate{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: InstanceNamespace,
+			Namespace: instance.Namespace,
 			Labels:    metaLabels,
 		},
 		Spec: certmgr.CertificateSpec{

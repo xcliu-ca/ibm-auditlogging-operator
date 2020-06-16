@@ -27,16 +27,19 @@ import (
 	extv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 func (r *ReconcileAuditLogging) reconcileService(instance *operatorv1alpha1.AuditLogging) (reconcile.Result, error) {
-	reqLogger := log.WithValues("Service.Namespace", res.InstanceNamespace, "instance.Name", instance.Name)
+	reqLogger := log.WithValues("Service.Namespace", instance.Namespace, "instance.Name", instance.Name)
 	expected := res.BuildAuditService(instance)
 	found := &corev1.Service{}
-	err := r.client.Get(context.TODO(), types.NamespacedName{Name: expected.Name, Namespace: res.InstanceNamespace}, found)
+	err := r.client.Get(context.TODO(), types.NamespacedName{Name: expected.Name, Namespace: instance.Namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
 		if err := controllerutil.SetControllerReference(instance, expected, r.scheme); err != nil {
 			return reconcile.Result{}, err
@@ -70,41 +73,64 @@ func (r *ReconcileAuditLogging) reconcileService(instance *operatorv1alpha1.Audi
 	return reconcile.Result{}, nil
 }
 
-func (r *ReconcileAuditLogging) reconcileAuditPolicyCRD(instance *operatorv1alpha1.AuditLogging) (reconcile.Result, error) {
-	reqLogger := log.WithValues("CRD.Namespace", res.InstanceNamespace, "instance.Name", instance.Name)
+func (r *ReconcileAuditLogging) reconcileAuditPolicyResources(instance *operatorv1alpha1.AuditLogging) (reconcile.Result, error) {
+	var reqLogger = log.WithValues("instance.Name", instance.Name)
+	var requeue = false
 	expected := res.BuildAuditPolicyCRD(instance)
 	found := &extv1beta1.CustomResourceDefinition{}
 	err := r.client.Get(context.TODO(), types.NamespacedName{Name: expected.Name}, found)
 	if err != nil && errors.IsNotFound(err) {
 		// Define a new CRD
-		if err := controllerutil.SetControllerReference(instance, expected, r.scheme); err != nil {
-			return reconcile.Result{}, err
-		}
-		reqLogger.Info("Creating a new Audit Policy CRD", "CRD.Namespace", expected.Namespace, "CRD.Name", expected.Name)
+		reqLogger.Info("Creating a new Audit Policy CRD", "CRD.Name", expected.Name)
 		err = r.client.Create(context.TODO(), expected)
-		if err != nil && errors.IsAlreadyExists(err) {
-			// Already exists from previous reconcile, requeue.
-			return reconcile.Result{Requeue: true}, nil
-		} else if err != nil {
-			reqLogger.Error(err, "Failed to create new CRD", "CRD.Namespace", expected.Namespace,
+		if err != nil && !errors.IsAlreadyExists(err) {
+			reqLogger.Error(err, "Failed to create new CRD", expected.Namespace,
 				"CRD.Name", expected.Name)
 			return reconcile.Result{}, err
 		}
 		// CRD created successfully - return and requeue
-		return reconcile.Result{Requeue: true}, nil
+		requeue = true
 	} else if err != nil {
 		reqLogger.Error(err, "Failed to get CRD")
 		return reconcile.Result{}, err
+	}
+	reqLogger = log.WithValues("CR.Namespace", instance.Namespace, "instance.Name", instance.Name)
+	foundPolicy := &unstructured.Unstructured{}
+	foundPolicy.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   res.AuditPolicyGroup,
+		Kind:    res.AuditPolicyKind,
+		Version: res.AuditPolicyVersion,
+	})
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: res.DefaultAuditPolicyName, Namespace: instance.Namespace}, foundPolicy)
+	if err != nil && errors.IsNotFound(err) {
+		policy, err := res.BuildAuditPolicyCR(instance)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		reqLogger.Info("Creating a new Audit Policy CR", "CR.Name", res.DefaultAuditPolicyName)
+		err = r.client.Create(context.TODO(), policy)
+		if err != nil && !errors.IsAlreadyExists(err) {
+			reqLogger.Error(err, "Failed to create new CR", "CR.Name", res.DefaultAuditPolicyName)
+			return reconcile.Result{}, err
+		}
+		// CR created successfully - return and requeue
+		requeue = true
+	} else if err != nil {
+		reqLogger.Error(err, "Failed to get CR")
+		return reconcile.Result{}, err
+	}
+	if requeue {
+		return reconcile.Result{Requeue: true}, nil
 	}
 	return reconcile.Result{}, nil
 }
 
 func (r *ReconcileAuditLogging) reconcilePolicyControllerDeployment(instance *operatorv1alpha1.AuditLogging) (reconcile.Result, error) {
-	reqLogger := log.WithValues("Deployment.Namespace", res.InstanceNamespace, "instance.Name", instance.Name)
+	reqLogger := log.WithValues("Deployment.Namespace", instance.Namespace, "instance.Name", instance.Name)
 
 	expected := res.BuildDeploymentForPolicyController(instance)
 	found := &appsv1.Deployment{}
-	err := r.client.Get(context.TODO(), types.NamespacedName{Name: res.AuditPolicyControllerDeploy, Namespace: res.InstanceNamespace}, found)
+	err := r.client.Get(context.TODO(), types.NamespacedName{Name: res.AuditPolicyControllerDeploy, Namespace: instance.Namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
 		// Define a new Deployment
 		if err := controllerutil.SetControllerReference(instance, expected, r.scheme); err != nil {
@@ -131,7 +157,7 @@ func (r *ReconcileAuditLogging) reconcilePolicyControllerDeployment(instance *op
 		found.Spec = expected.Spec
 		err = r.client.Update(context.TODO(), found)
 		if err != nil {
-			reqLogger.Error(err, "Failed to update Deployment", "Namespace", res.InstanceNamespace, "Name", found.Name)
+			reqLogger.Error(err, "Failed to update Deployment", "Namespace", instance.Namespace, "Name", found.Name)
 			return reconcile.Result{}, err
 		}
 		reqLogger.Info("Updating Audit Policy Controller Deployment", "Deployment.Name", found.Name)
@@ -155,14 +181,14 @@ func (r *ReconcileAuditLogging) reconcileAuditConfigMaps(instance *operatorv1alp
 }
 
 func (r *ReconcileAuditLogging) reconcileConfig(instance *operatorv1alpha1.AuditLogging, configName string) (reconcile.Result, error) {
-	reqLogger := log.WithValues("ConfigMap.Namespace", res.InstanceNamespace, "instance.Name", instance.Name)
+	reqLogger := log.WithValues("ConfigMap.Namespace", instance.Namespace, "instance.Name", instance.Name)
 	expected, err := res.BuildConfigMap(instance, configName)
 	if err != nil {
 		reqLogger.Error(err, "Failed to create ConfigMap")
 		return reconcile.Result{}, err
 	}
 	found := &corev1.ConfigMap{}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: configName, Namespace: res.InstanceNamespace}, found)
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: configName, Namespace: instance.Namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
 		// Define a new ConfigMap
 		if err := controllerutil.SetControllerReference(instance, expected, r.scheme); err != nil {
@@ -236,10 +262,10 @@ func (r *ReconcileAuditLogging) reconcileConfig(instance *operatorv1alpha1.Audit
 }
 
 func (r *ReconcileAuditLogging) reconcileFluentdDaemonSet(instance *operatorv1alpha1.AuditLogging) (reconcile.Result, error) {
-	reqLogger := log.WithValues("Daemonset.Namespace", res.InstanceNamespace, "instance.Name", instance.Name)
+	reqLogger := log.WithValues("Daemonset.Namespace", instance.Namespace, "instance.Name", instance.Name)
 	expected := res.BuildDaemonForFluentd(instance)
 	found := &appsv1.DaemonSet{}
-	err := r.client.Get(context.TODO(), types.NamespacedName{Name: res.FluentdDaemonSetName, Namespace: res.InstanceNamespace}, found)
+	err := r.client.Get(context.TODO(), types.NamespacedName{Name: res.FluentdDaemonSetName, Namespace: instance.Namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
 		// Define a new DaemonSet
 		if err := controllerutil.SetControllerReference(instance, expected, r.scheme); err != nil {
@@ -269,7 +295,7 @@ func (r *ReconcileAuditLogging) reconcileFluentdDaemonSet(instance *operatorv1al
 		found.Spec.Template.Spec.HostAliases = temp
 		err = r.client.Update(context.TODO(), found)
 		if err != nil {
-			reqLogger.Error(err, "Failed to update Daemonset", "Namespace", res.InstanceNamespace, "Name", found.Name)
+			reqLogger.Error(err, "Failed to update Daemonset", "Namespace", instance.Namespace, "Name", found.Name)
 			return reconcile.Result{}, err
 		}
 		reqLogger.Info("Updating Fluentd DaemonSet", "Daemonset.Name", found.Name)
@@ -294,7 +320,7 @@ func (r *ReconcileAuditLogging) reconcileAuditCerts(instance *operatorv1alpha1.A
 }
 
 func (r *ReconcileAuditLogging) reconcileAuditCertificate(instance *operatorv1alpha1.AuditLogging, name string) (reconcile.Result, error) {
-	reqLogger := log.WithValues("Certificate.Namespace", res.InstanceNamespace, "Instance.Name", instance.Name)
+	reqLogger := log.WithValues("Certificate.Namespace", instance.Namespace, "Instance.Name", instance.Name)
 	expectedCert := res.BuildCertsForAuditLogging(instance, instance.Spec.Fluentd.ClusterIssuer, name)
 	foundCert := &certmgr.Certificate{}
 	err := r.client.Get(context.TODO(), types.NamespacedName{Name: expectedCert.Name, Namespace: expectedCert.ObjectMeta.Namespace}, foundCert)
@@ -332,4 +358,47 @@ func (r *ReconcileAuditLogging) reconcileAuditCertificate(instance *operatorv1al
 		return reconcile.Result{Requeue: true}, nil
 	}
 	return reconcile.Result{}, nil
+}
+
+func removePolicy(instance *operatorv1alpha1.AuditLogging, client client.Client, crName string) error {
+	reqLogger := log.WithValues("func", "removeCR")
+	// Get Audit Policy
+	// Using a unstructured object.
+	policy := &unstructured.Unstructured{}
+	policy.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   res.AuditPolicyGroup,
+		Kind:    res.AuditPolicyKind,
+		Version: res.AuditPolicyVersion,
+	})
+	err := client.Get(context.Background(), types.NamespacedName{Name: crName, Namespace: instance.Namespace}, policy)
+	if err != nil && errors.IsNotFound(err) {
+		reqLogger.Error(err, "Error getting policy", "Name", crName)
+		return nil
+	} else if err == nil {
+		if err = client.Delete(context.Background(), policy); err != nil {
+			reqLogger.Error(err, "Error deleting policy", "Name", crName)
+			return err
+		}
+	} else {
+		return err
+	}
+	return nil
+}
+
+func removeCRD(client client.Client, crdName string) error {
+	// Delete CustomResourceDefintion
+	customResourceDefinition := &extv1beta1.CustomResourceDefinition{}
+	if err := client.Get(context.Background(), types.NamespacedName{Name: crdName, Namespace: ""},
+		customResourceDefinition); err != nil && errors.IsNotFound(err) {
+		log.V(1).Info("Error getting custome resource definition", "msg", err)
+		return nil
+	} else if err == nil {
+		if err = client.Delete(context.Background(), customResourceDefinition); err != nil {
+			log.V(1).Info("Error deleting custom resource definition", "name", crdName, "error message", err)
+			return err
+		}
+	} else {
+		return err
+	}
+	return nil
 }

@@ -20,9 +20,47 @@ import (
 	operatorv1alpha1 "github.com/ibm/ibm-auditlogging-operator/pkg/apis/operator/v1alpha1"
 	extv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/yaml"
 )
 
 const AuditPolicyCRDName = "auditpolicies.audit.policies.ibm.com"
+const AuditPolicyGroup = "audit.policies.ibm.com"
+const AuditPolicyKind = "AuditPolicy"
+const AuditPolicyVersion = "v1alpha1"
+const DefaultAuditPolicyName = "example-auditpolicy"
+
+var defaultAuditPolicy = []byte(`
+apiVersion: audit.policies.ibm.com/v1alpha1
+kind: AuditPolicy # Verify if audit is enabled
+metadata:
+  name: ` + DefaultAuditPolicyName +
+	`
+  labels:
+    category: "System-Integrity"
+spec:
+  namespaceSelector:
+    include: []
+    exclude: []
+  clusterAuditPolicy:
+    auditPolicyRules: {}
+  remediationAction: inform # enforce or inform
+`)
+
+func BuildAuditPolicyCR(instance *operatorv1alpha1.AuditLogging) (*unstructured.Unstructured, error) {
+	obj := &unstructured.Unstructured{}
+	jsonSpec, err := yaml.YAMLToJSON(defaultAuditPolicy)
+	if err != nil {
+		return nil, err
+	}
+	if err := obj.UnmarshalJSON(jsonSpec); err != nil {
+		return nil, err
+	}
+	obj.SetName(DefaultAuditPolicyName)
+	obj.SetNamespace(instance.Namespace)
+	obj.SetLabels(LabelsForMetadata(AuditPolicyControllerDeploy))
+	return obj, nil
+}
 
 // BuildAuditPolicyCRD returns a CRD object
 func BuildAuditPolicyCRD(instance *operatorv1alpha1.AuditLogging) *extv1beta1.CustomResourceDefinition {
@@ -34,9 +72,9 @@ func BuildAuditPolicyCRD(instance *operatorv1alpha1.AuditLogging) *extv1beta1.Cu
 			Labels: metaLabels,
 		},
 		Spec: extv1beta1.CustomResourceDefinitionSpec{
-			Group: "audit.policies.ibm.com",
+			Group: AuditPolicyGroup,
 			Names: extv1beta1.CustomResourceDefinitionNames{
-				Kind:       "AuditPolicy",
+				Kind:       AuditPolicyKind,
 				Plural:     "auditpolicies",
 				ShortNames: []string{"ap"},
 			},
@@ -113,7 +151,7 @@ func BuildAuditPolicyCRD(instance *operatorv1alpha1.AuditLogging) *extv1beta1.Cu
 					},
 				},
 			},
-			Version: "v1alpha1",
+			Version: AuditPolicyVersion,
 		},
 		Status: extv1beta1.CustomResourceDefinitionStatus{
 			AcceptedNames: extv1beta1.CustomResourceDefinitionNames{

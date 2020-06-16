@@ -33,8 +33,6 @@ const productID = "068a62892a1e4db39641342e592daa25"
 const productVersion = "3.4.0"
 const productMetric = "FREE"
 
-const InstanceNamespace = "ibm-common-services"
-
 var DefaultStatusForCR = []string{"none"}
 var log = logf.Log.WithName("controller_auditlogging")
 
@@ -102,6 +100,27 @@ func GetPodNames(pods []corev1.Pod) []string {
 		reqLogger.Info("CS??? pod name=" + pod.Name)
 	}
 	return podNames
+}
+
+// ContainsString returns a Boolean
+func ContainsString(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
+}
+
+//RemoveString returns a Boolean
+func RemoveString(slice []string, s string) (result []string) {
+	for _, item := range slice {
+		if item == s {
+			continue
+		}
+		result = append(result, item)
+	}
+	return
 }
 
 //IBMDEV

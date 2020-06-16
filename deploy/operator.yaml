@@ -25,6 +25,8 @@ spec:
         productMetric: FREE
         openshift.io/scc: restricted
     spec:
+      imagePullSecrets:
+      - name: docker-scratch
       serviceAccountName: ibm-auditlogging-operator
       affinity:
         nodeAffinity:
@@ -40,13 +42,15 @@ spec:
       containers:
         - name: ibm-auditlogging-operator
           # Replace this with the built image name
-          image: quay.io/opencloudio/ibm-auditlogging-operator:latest
+          image: hyc-cloud-private-scratch-docker-local.artifactory.swg-devops.com/ibmcom/audit-operator:ns-scope
           command:
           - ibm-auditlogging-operator
           imagePullPolicy: Always
           env:
             - name: WATCH_NAMESPACE
-              value: ""
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: POD_NAME
               valueFrom:
                 fieldRef:

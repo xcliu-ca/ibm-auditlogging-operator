@@ -89,18 +89,18 @@ func TestAuditLoggingController(t *testing.T) {
 	r := getReconciler(cr)
 
 	reconcileResources(t, r, req, true)
-	checkMountAndRBACPreReqs(t, r, req)
-	checkPolicyControllerConfig(t, r, req)
+	checkMountAndRBACPreReqs(t, r, req, cr)
+	checkPolicyControllerConfig(t, r, req, cr)
 	checkFluentdConfig(t, r, req, cr)
-	checkInPlaceUpdate(t, r, req)
+	checkInPlaceUpdate(t, r, req, cr)
 }
 
-func checkMountAndRBACPreReqs(t *testing.T, r ReconcileAuditLogging, req reconcile.Request) {
+func checkMountAndRBACPreReqs(t *testing.T, r ReconcileAuditLogging, req reconcile.Request, cr *operatorv1alpha1.AuditLogging) {
 	var err error
 	// Check if ConfigMaps are created and have data
 	foundCM := &corev1.ConfigMap{}
 	for _, cm := range res.FluentdConfigMaps {
-		err = r.client.Get(context.TODO(), types.NamespacedName{Name: cm, Namespace: res.InstanceNamespace}, foundCM)
+		err = r.client.Get(context.TODO(), types.NamespacedName{Name: cm, Namespace: cr.Namespace}, foundCM)
 		if err != nil {
 			t.Fatalf("get configmap: (%v)", err)
 		}
@@ -111,7 +111,7 @@ func checkMountAndRBACPreReqs(t *testing.T, r ReconcileAuditLogging, req reconci
 	foundCert := &certmgr.Certificate{}
 	certs := []string{res.AuditLoggingHTTPSCertName, res.AuditLoggingCertName}
 	for _, c := range certs {
-		err = r.client.Get(context.TODO(), types.NamespacedName{Name: c, Namespace: res.InstanceNamespace}, foundCert)
+		err = r.client.Get(context.TODO(), types.NamespacedName{Name: c, Namespace: cr.Namespace}, foundCert)
 		if err != nil {
 			t.Fatalf("get cert: (%v)", err)
 		}
@@ -120,14 +120,14 @@ func checkMountAndRBACPreReqs(t *testing.T, r ReconcileAuditLogging, req reconci
 
 	// Check if ServiceAccount is created
 	foundSA := &corev1.ServiceAccount{}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: res.OperandServiceAccount, Namespace: res.InstanceNamespace}, foundSA)
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: res.OperandServiceAccount, Namespace: cr.Namespace}, foundSA)
 	if err != nil {
 		t.Fatalf("get service account: (%v)", err)
 	}
 	reconcileResources(t, r, req, true)
 }
 
-func checkPolicyControllerConfig(t *testing.T, r ReconcileAuditLogging, req reconcile.Request) {
+func checkPolicyControllerConfig(t *testing.T, r ReconcileAuditLogging, req reconcile.Request, cr *operatorv1alpha1.AuditLogging) {
 	var err error
 
 	// Check if ClusterRole and ClusterRoleBinding are created
@@ -154,7 +154,7 @@ func checkPolicyControllerConfig(t *testing.T, r ReconcileAuditLogging, req reco
 	reconcileResources(t, r, req, true)
 
 	// Check if Policy Controller Deployment has been created
-	pc := getAuditPolicyController(t, r)
+	pc := getAuditPolicyController(t, r, cr)
 	image := res.DefaultImageRegistry + res.DefaultPCImageName + ":" + dummyPolicyControllerTag
 	if pc.Spec.Template.Spec.Containers[0].Image != image {
 		t.Fatalf("Incorrect policy controller image. Found: (%s), Expected: (%s)", pc.Spec.Template.Spec.Containers[0].Image, image)
@@ -167,14 +167,14 @@ func checkFluentdConfig(t *testing.T, r ReconcileAuditLogging, req reconcile.Req
 
 	// Check if Role and Role Binding are created
 	foundRole := &rbacv1.Role{}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: res.FluentdDaemonSetName + "-role", Namespace: res.InstanceNamespace}, foundRole)
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: res.FluentdDaemonSetName + "-role", Namespace: cr.Namespace}, foundRole)
 	if err != nil {
 		t.Fatalf("get role: (%v)", err)
 	}
 	reconcileResources(t, r, req, true)
 
 	foundRB := &rbacv1.RoleBinding{}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: res.FluentdDaemonSetName + "-rolebinding", Namespace: res.InstanceNamespace}, foundRB)
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: res.FluentdDaemonSetName + "-rolebinding", Namespace: cr.Namespace}, foundRB)
 	if err != nil {
 		t.Fatalf("get rolebinding: (%v)", err)
 	}
@@ -182,14 +182,14 @@ func checkFluentdConfig(t *testing.T, r ReconcileAuditLogging, req reconcile.Req
 
 	// Check if Service is created
 	foundSvc := &corev1.Service{}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: res.AuditLoggingComponentName, Namespace: res.InstanceNamespace}, foundSvc)
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: res.AuditLoggingComponentName, Namespace: cr.Namespace}, foundSvc)
 	if err != nil {
 		t.Fatalf("get service: (%v)", err)
 	}
 	reconcileResources(t, r, req, true)
 
 	// Check if fluentd DaemonSet is created
-	ds := getFluentd(t, r)
+	ds := getFluentd(t, r, cr)
 	image := res.DefaultImageRegistry + res.DefaultFluentdImageName + "@" + dummyFluentdSHA
 	if ds.Spec.Template.Spec.Containers[0].Image != image {
 		t.Fatalf("Incorrect fluentd image. Found: (%s), Expected: (%s)", ds.Spec.Template.Spec.Containers[0].Image, image)
@@ -200,7 +200,7 @@ func checkFluentdConfig(t *testing.T, r ReconcileAuditLogging, req reconcile.Req
 	var podLabels = res.LabelsForPodMetadata(res.FluentdName, cr.Name)
 	var pod = corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: res.InstanceNamespace,
+			Namespace: cr.Namespace,
 			Labels:    podLabels,
 		},
 	}
@@ -218,7 +218,7 @@ func checkFluentdConfig(t *testing.T, r ReconcileAuditLogging, req reconcile.Req
 	podLabels = res.LabelsForPodMetadata(res.AuditPolicyControllerDeploy, cr.Name)
 	pod = corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: res.InstanceNamespace,
+			Namespace: cr.Namespace,
 			Labels:    podLabels,
 		},
 	}
@@ -244,7 +244,7 @@ func checkFluentdConfig(t *testing.T, r ReconcileAuditLogging, req reconcile.Req
 	}
 
 	updateAuditLoggingCR(al, t, r, req)
-	checkAuditLogging(t, r, req)
+	checkAuditLogging(t, r, req, cr)
 }
 
 func updateAuditLoggingCR(al *operatorv1alpha1.AuditLogging, t *testing.T, r ReconcileAuditLogging, req reconcile.Request) {
@@ -258,10 +258,10 @@ func updateAuditLoggingCR(al *operatorv1alpha1.AuditLogging, t *testing.T, r Rec
 	reconcileResources(t, r, req, true)
 }
 
-func checkAuditLogging(t *testing.T, r ReconcileAuditLogging, req reconcile.Request) {
-	policyController := getAuditPolicyController(t, r)
+func checkAuditLogging(t *testing.T, r ReconcileAuditLogging, req reconcile.Request, cr *operatorv1alpha1.AuditLogging) {
+	policyController := getAuditPolicyController(t, r, cr)
 	reconcileResources(t, r, req, true)
-	fluentd := getFluentd(t, r)
+	fluentd := getFluentd(t, r, cr)
 	reconcileResources(t, r, req, false)
 	var found = false
 	for _, arg := range policyController.Spec.Template.Spec.Containers[0].Args {
@@ -285,14 +285,14 @@ func checkAuditLogging(t *testing.T, r ReconcileAuditLogging, req reconcile.Requ
 	}
 }
 
-func checkInPlaceUpdate(t *testing.T, r ReconcileAuditLogging, req reconcile.Request) {
+func checkInPlaceUpdate(t *testing.T, r ReconcileAuditLogging, req reconcile.Request, cr *operatorv1alpha1.AuditLogging) {
 	var err error
 	var emptyLabels map[string]string
 	assert := assert.New(t)
 
 	foundCM := &corev1.ConfigMap{}
 	err = r.client.Get(context.TODO(), types.NamespacedName{Name: res.FluentdDaemonSetName + "-" +
-		res.SplunkConfigName, Namespace: res.InstanceNamespace}, foundCM)
+		res.SplunkConfigName, Namespace: cr.Namespace}, foundCM)
 	if err != nil {
 		t.Fatalf("get configmap: (%v)", err)
 	}
@@ -310,7 +310,7 @@ func checkInPlaceUpdate(t *testing.T, r ReconcileAuditLogging, req reconcile.Req
 
 	updatedCM := &corev1.ConfigMap{}
 	err = r.client.Get(context.TODO(), types.NamespacedName{Name: res.FluentdDaemonSetName + "-" +
-		res.SplunkConfigName, Namespace: res.InstanceNamespace}, updatedCM)
+		res.SplunkConfigName, Namespace: cr.Namespace}, updatedCM)
 	if err != nil {
 		t.Fatalf("get configmap: (%v)", err)
 	}
@@ -333,7 +333,7 @@ func checkInPlaceUpdate(t *testing.T, r ReconcileAuditLogging, req reconcile.Req
 	}
 
 	// add hostaliases
-	fluentd := getFluentd(t, r)
+	fluentd := getFluentd(t, r, cr)
 	fluentd.Spec.Template.Spec.HostAliases = dummyHostAliases
 	// trigger found != expected
 	fluentd.ObjectMeta.Labels = map[string]string{}
@@ -343,7 +343,7 @@ func checkInPlaceUpdate(t *testing.T, r ReconcileAuditLogging, req reconcile.Req
 	}
 	reconcileResources(t, r, req, true)
 
-	fluentd = getFluentd(t, r)
+	fluentd = getFluentd(t, r, cr)
 	if !reflect.DeepEqual(fluentd.Spec.Template.Spec.HostAliases, dummyHostAliases) {
 		t.Fatalf("HostAliases not saved. Found: (%v). Expected: (%v)", fluentd.Spec.Template.Spec.HostAliases, dummyHostAliases)
 	}
@@ -358,18 +358,18 @@ func getAuditLogging(t *testing.T, r ReconcileAuditLogging, req reconcile.Reques
 	return al
 }
 
-func getAuditPolicyController(t *testing.T, r ReconcileAuditLogging) *appsv1.Deployment {
+func getAuditPolicyController(t *testing.T, r ReconcileAuditLogging, cr *operatorv1alpha1.AuditLogging) *appsv1.Deployment {
 	foundDep := &appsv1.Deployment{}
-	err := r.client.Get(context.TODO(), types.NamespacedName{Name: res.AuditPolicyControllerDeploy, Namespace: res.InstanceNamespace}, foundDep)
+	err := r.client.Get(context.TODO(), types.NamespacedName{Name: res.AuditPolicyControllerDeploy, Namespace: cr.Namespace}, foundDep)
 	if err != nil {
 		t.Fatalf("get deployment: (%v)", err)
 	}
 	return foundDep
 }
 
-func getFluentd(t *testing.T, r ReconcileAuditLogging) *appsv1.DaemonSet {
+func getFluentd(t *testing.T, r ReconcileAuditLogging, cr *operatorv1alpha1.AuditLogging) *appsv1.DaemonSet {
 	foundDS := &appsv1.DaemonSet{}
-	err := r.client.Get(context.TODO(), types.NamespacedName{Name: res.FluentdDaemonSetName, Namespace: res.InstanceNamespace}, foundDS)
+	err := r.client.Get(context.TODO(), types.NamespacedName{Name: res.FluentdDaemonSetName, Namespace: cr.Namespace}, foundDS)
 	if err != nil {
 		t.Fatalf("get daemonset: (%v)", err)
 	}

@@ -64,7 +64,7 @@ type AuditLoggingStatus struct {
 
 // AuditLogging is the Schema for the auditloggings API
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:path=auditloggings,scope=Cluster
+// +kubebuilder:resource:path=auditloggings,scope=Namespaced
 type AuditLogging struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

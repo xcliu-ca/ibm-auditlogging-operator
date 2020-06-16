@@ -32,7 +32,7 @@ FLUENTD_TAG ?= v1.6.2-ruby25
 POLICY_CTRL_TAG ?= 3.5.0
 
 # The namespcethat operator will be deployed in
-NAMESPACE=ibm-common-services
+NAMESPACE=test
 
 # Github host to use for checking the source tree;
 # Override this variable ue with your own value if you're working on forked repo.

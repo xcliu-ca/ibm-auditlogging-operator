@@ -1,7 +1,24 @@
-kind: ClusterRoleBinding
+kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: ibm-auditlogging-operator
+  labels:
+    app.kubernetes.io/instance: common-audit-logging 
+    app.kubernetes.io/managed-by: ibm-auditlogging-operator
+    app.kubernetes.io/name: common-audit-logging
+subjects:
+- kind: ServiceAccount
+  name: ibm-auditlogging-operator
+roleRef:
+  kind: Role
+  name: ibm-auditlogging-operator
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ibm-auditlogging-operator-cluster
   labels:
     app.kubernetes.io/instance: common-audit-logging 
     app.kubernetes.io/managed-by: ibm-auditlogging-operator

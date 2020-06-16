@@ -1,5 +1,5 @@
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
   creationTimestamp: null
   name: ibm-auditlogging-operator
@@ -84,6 +84,7 @@ rules:
   - operator.ibm.com
   resources:
   - '*'
+  - auditloggings
   verbs:
   - create
   - delete
@@ -194,3 +195,24 @@ rules:
   - patch
   - update
   - watch
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ibm-auditlogging-operator
+  labels:
+    app.kubernetes.io/instance: common-audit-logging
+    app.kubernetes.io/managed-by: ibm-auditlogging-operator
+    app.kubernetes.io/name: common-audit-logging
+rules:
+#required by operator to create certificates
+- apiGroups:
+  - certmanager.k8s.io
+  resources:
+  - clusterissuers
+  verbs:
+  - use
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["get", "list"]

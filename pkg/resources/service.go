@@ -35,7 +35,7 @@ func BuildAuditService(instance *operatorv1alpha1.AuditLogging) *corev1.Service 
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      AuditLoggingComponentName,
-			Namespace: InstanceNamespace,
+			Namespace: instance.Namespace,
 			Labels:    metaLabels,
 		},
 		Spec: corev1.ServiceSpec{

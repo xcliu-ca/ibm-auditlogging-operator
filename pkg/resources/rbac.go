@@ -48,8 +48,9 @@ func BuildClusterRoleBinding(instance *operatorv1alpha1.AuditLogging) *rbacv1.Cl
 	metaLabels := LabelsForMetadata(AuditPolicyControllerDeploy)
 	rb := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   AuditPolicyControllerDeploy + RoleBindingPostfix,
-			Labels: metaLabels,
+			Name:      AuditPolicyControllerDeploy + RoleBindingPostfix,
+			Namespace: instance.Namespace,
+			Labels:    metaLabels,
 		},
 		Subjects: []rbacv1.Subject{{
 			Kind:      "ServiceAccount",
@@ -70,8 +71,9 @@ func BuildClusterRole(instance *operatorv1alpha1.AuditLogging) *rbacv1.ClusterRo
 	metaLabels := LabelsForMetadata(AuditPolicyControllerDeploy)
 	cr := &rbacv1.ClusterRole{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   AuditPolicyControllerDeploy + RolePostfix,
-			Labels: metaLabels,
+			Name:      AuditPolicyControllerDeploy + RolePostfix,
+			Namespace: instance.Namespace,
+			Labels:    metaLabels,
 		},
 		Rules: []rbacv1.PolicyRule{
 			{

@@ -282,11 +282,25 @@ Run these commands to collect logs:
           "args": []
         }
       ]
-    }
+    },
+    {
+            "name": "Unit Tests",
+            "type": "go",
+            "request": "launch",
+            "mode": "test",
+            "program": "${workspaceFolder}/pkg/controller/commonaudit/commonaudit_controller_test.go",
+            "env": {},
+            "args": [
+                "-test.v",
+                "-test.run",
+                "TestCommonAuditController"
+            ],
+            "showLog": true
+        }
   ```
 
 - To start debugging:
-  1. Deploy `AuditLogging` CRD and CR.
+  1. Deploy CRDs and CR.
   1. Start the Vscode debugger. Open the Debug console and you will see the standard output from the operator-sdk up local command. Your debugger will stop on the set breakpoints.
 
 #### End-to-End testing

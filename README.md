@@ -280,10 +280,8 @@ Run these commands to collect logs:
             "WATCH_NAMESPACE": "ibm-common-services"
           },
           "args": []
-        }
-      ]
-    },
-    {
+        },
+        {
             "name": "Unit Tests",
             "type": "go",
             "request": "launch",
@@ -297,6 +295,8 @@ Run these commands to collect logs:
             ],
             "showLog": true
         }
+      ]
+    }
   ```
 
 - To start debugging:

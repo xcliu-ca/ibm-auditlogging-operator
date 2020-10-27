@@ -53,6 +53,7 @@ type AuditLoggingReconciler struct {
 	Recorder record.EventRecorder
 }
 
+// Reconcile reconciles
 func (r *AuditLoggingReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	_ = context.Background()
 	_ = r.Log.WithName("controller_auditlogging").WithValues("request", req.NamespacedName)
@@ -105,7 +106,7 @@ func (r *AuditLoggingReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error
 	var recResult reconcile.Result
 	var recErr error
 	reconcilers := []func(*operatorv1alpha1.AuditLogging) (reconcile.Result, error){
-		r.removeOldPolicyControllerDeploy,
+		r.reconcilePolicyControllerDeployment,
 		r.reconcileAuditConfigMaps,
 		r.reconcileAuditCerts,
 		r.reconcileServiceAccount,
@@ -134,6 +135,7 @@ func (r *AuditLoggingReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error
 	return ctrl.Result{}, nil
 }
 
+// SetupWithManager setups up the manager
 func (r *AuditLoggingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&operatorv1alpha1.AuditLogging{}).

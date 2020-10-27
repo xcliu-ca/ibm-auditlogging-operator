@@ -74,34 +74,6 @@ func (r *AuditLoggingReconciler) reconcileService(instance *operatorv1alpha1.Aud
 	return reconcile.Result{}, nil
 }
 
-func (r *AuditLoggingReconciler) removeOldPolicyControllerDeploy(instance *operatorv1alpha1.AuditLogging) (reconcile.Result, error) {
-	// Policy controller container has been moved to operator pod in 3.7, remove redundant deployment
-	policyDeploy := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      res.AuditPolicyControllerDeploy,
-			Namespace: constant.InstanceNamespace,
-		},
-	}
-	// check if the deployment exists
-	err := r.Client.Get(context.TODO(),
-		types.NamespacedName{Name: res.AuditPolicyControllerDeploy, Namespace: constant.InstanceNamespace}, policyDeploy)
-	if err == nil {
-		// found deployment so delete it
-		err := r.Client.Delete(context.TODO(), policyDeploy)
-		if err != nil {
-			r.Log.Error(err, "Failed to delete old policy controller deployment")
-			return reconcile.Result{}, err
-		}
-		r.Log.Info("Deleted old policy controller deployment")
-		return reconcile.Result{Requeue: true}, nil
-	} else if !errors.IsNotFound(err) {
-		// if err is NotFound do nothing, else print an error msg
-		r.Log.Error(err, "Failed to get old policy controller deployment")
-		return reconcile.Result{}, err
-	}
-	return reconcile.Result{}, nil
-}
-
 func (r *AuditLoggingReconciler) reconcileAuditConfigMaps(instance *operatorv1alpha1.AuditLogging) (reconcile.Result, error) {
 	var recResult reconcile.Result
 	var recErr error
@@ -264,6 +236,87 @@ func (r *AuditLoggingReconciler) reconcileFluentdDaemonSet(instance *operatorv1a
 			return reconcile.Result{}, err
 		}
 		r.Log.Info("Updating Fluentd DaemonSet", "Daemonset.Name", found.Name)
+		// Spec updated - return and requeue
+		return reconcile.Result{Requeue: true}, nil
+	}
+	return reconcile.Result{}, nil
+}
+
+func (r *AuditLoggingReconciler) removeDisabledPolicyControllerDeploy() (reconcile.Result, error) {
+	policyDeploy := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: res.AuditPolicyControllerDeploy,
+			// HB - change to operator namespace
+			Namespace: constant.InstanceNamespace,
+		},
+	}
+	// check if the deployment exists
+	err := r.Client.Get(context.TODO(),
+		types.NamespacedName{Name: res.AuditPolicyControllerDeploy, Namespace: constant.InstanceNamespace}, policyDeploy)
+	if err == nil {
+		// found deployment so delete it
+		err := r.Client.Delete(context.TODO(), policyDeploy)
+		if err != nil {
+			r.Log.Error(err, "Failed to delete old policy controller deployment")
+			return reconcile.Result{}, err
+		}
+		r.Log.Info("Deleted old policy controller deployment")
+		return reconcile.Result{Requeue: true}, nil
+	} else if !errors.IsNotFound(err) {
+		// if err is NotFound do nothing, else print an error msg
+		r.Log.Error(err, "Failed to get old policy controller deployment")
+		return reconcile.Result{}, err
+	}
+	return reconcile.Result{}, nil
+}
+
+func (r *AuditLoggingReconciler) reconcilePolicyControllerDeployment(instance *operatorv1alpha1.AuditLogging) (reconcile.Result, error) {
+
+	// If policy is disabled , remove..
+	if !instance.Spec.PolicyController.EnableAuditPolicy {
+		r.Log.Info("Delete old policy controller deployment")
+		return r.removeDisabledPolicyControllerDeploy()
+	}
+	expected := res.BuildDeploymentForPolicyController(instance)
+
+	r.Log.Info("Creating Policy Controller", "PolicyController.Namespace", expected.Namespace, "instance.Name", expected.Name)
+	found := &appsv1.Deployment{}
+	// check if the deployment exists
+	// HB
+
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: res.AuditPolicyDeploymentName, Namespace: constant.InstanceNamespace}, found)
+
+	if err != nil && errors.IsNotFound(err) {
+		// Define a new Deployment
+		if err := controllerutil.SetControllerReference(instance, expected, r.Scheme); err != nil {
+			return reconcile.Result{}, err
+		}
+		r.Log.Info("Creating a new Audit Policy Controller Deployment", "Deployment.Namespace", expected.Namespace, "Deployment.Name", expected.Name)
+		err = r.Client.Create(context.TODO(), expected)
+		if err != nil && errors.IsAlreadyExists(err) {
+			// Already exists from previous reconcile, requeue.
+			return reconcile.Result{Requeue: true}, nil
+		} else if err != nil {
+			r.Log.Error(err, "Failed to create new Audit Policy Controller Deployment", "Deployment.Namespace", expected.Namespace,
+				"Deployment.Name", expected.Name)
+			return reconcile.Result{}, err
+		}
+		// Deployment created successfully - return and requeue
+		return reconcile.Result{Requeue: true}, nil
+	} else if err != nil {
+		r.Log.Error(err, "Failed to get Deployment")
+		return reconcile.Result{}, err
+	} else if !res.EqualDeployments(expected, found) {
+		// If spec is incorrect, update it and requeue
+		found.ObjectMeta.Labels = expected.ObjectMeta.Labels
+		found.Spec = expected.Spec
+		err = r.Client.Update(context.TODO(), found)
+
+		if err != nil {
+			r.Log.Error(err, "Failed to update Deployment", "Namespace", constant.InstanceNamespace, "Name", found.Name)
+			return reconcile.Result{}, err
+		}
+		r.Log.Info("Updating Audit Policy Controller Deployment", "Deployment.Name", found.Name)
 		// Spec updated - return and requeue
 		return reconcile.Result{Requeue: true}, nil
 	}

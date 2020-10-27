@@ -37,8 +37,17 @@ var architectureList = []string{"amd64", "ppc64le", "s390x"}
 var seconds30 int64 = 30
 var defaultReplicas = int32(1)
 
+// FluentdDaemonSetName is the name of the fluentd daemonset name
 const FluentdDaemonSetName = "audit-logging-fluentd-ds"
+
+// FluentdDeploymentName is the name of the fluentd deployment
 const FluentdDeploymentName = "audit-logging-fluentd"
+
+// AuditPolicyDeploymentName is the name of the audit policy deployment
+const AuditPolicyDeploymentName = "audit-policy-controller"
+
+// AuditPolicyControllerDeploy is the name of the audit policy controller
+const AuditPolicyControllerDeploy = "audit-policy-controller"
 
 const fluentdInput = "/fluentd/etc/source.conf"
 const qRadarOutput = "/fluentd/etc/remoteSyslog.conf"
@@ -46,7 +55,85 @@ const splunkOutput = "/fluentd/etc/splunkHEC.conf"
 
 const defaultJournalPath = "/run/log/journal"
 
-const AuditPolicyControllerDeploy = "audit-policy-controller"
+// BuildDeploymentForPolicyController returns a Deployment object
+func BuildDeploymentForPolicyController(instance *operatorv1alpha1.AuditLogging) *appsv1.Deployment {
+	log.WithValues("func", "BuildDeploymentForPolicyController")
+	metaLabels := util.LabelsForMetadata(constant.AuditPolicyControllerDeploy)
+	selectorLabels := util.LabelsForSelector(constant.AuditPolicyControllerDeploy, instance.Name)
+	podLabels := util.LabelsForPodMetadata(constant.AuditPolicyControllerDeploy, instance.Name)
+	annotations := util.AnnotationsForMetering(false)
+	policyControllerMainContainer.Image = util.GetImageID(instance.Spec.PolicyController.ImageRegistry,
+		constant.DefaultPCImageName, constant.PolicyControllerEnvVar)
+	policyControllerMainContainer.ImagePullPolicy = getPullPolicy(instance.Spec.PolicyController.PullPolicy)
+
+	var args = make([]string, 0)
+	if instance.Spec.PolicyController.Verbosity != "" {
+		args = append(args, "--v="+instance.Spec.PolicyController.Verbosity)
+	} else {
+		args = append(args, "--v=0")
+	}
+	if instance.Spec.PolicyController.Frequency != "" {
+		args = append(args, "--update-frequency="+instance.Spec.PolicyController.Frequency)
+	}
+	policyControllerMainContainer.Args = args
+
+	deploy := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: AuditPolicyDeploymentName,
+			//HB change to operator deployment namespace
+			Namespace: "ibm-common-services",
+			Labels:    metaLabels,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: selectorLabels,
+			},
+			Replicas: &replicas,
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels:      podLabels,
+					Annotations: annotations,
+				},
+				Spec: corev1.PodSpec{
+					ServiceAccountName:            OperandServiceAccount,
+					TerminationGracePeriodSeconds: &seconds30,
+					Affinity: &corev1.Affinity{
+						NodeAffinity: &corev1.NodeAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+								NodeSelectorTerms: []corev1.NodeSelectorTerm{
+									{
+										MatchExpressions: []corev1.NodeSelectorRequirement{
+											{
+												Key:      "beta.kubernetes.io/arch",
+												Operator: corev1.NodeSelectorOpIn,
+												Values:   architectureList,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+
+					// NodeSelector:                  {},
+					Tolerations: commonTolerations,
+					Volumes: []corev1.Volume{
+						{
+							Name: "tmp",
+							VolumeSource: corev1.VolumeSource{
+								EmptyDir: &corev1.EmptyDirVolumeSource{},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						policyControllerMainContainer,
+					},
+				},
+			},
+		},
+	}
+	return deploy
+}
 
 // BuildDeploymentForFluentd returns a Deployment object
 func BuildDeploymentForFluentd(instance *operatorv1.CommonAudit) *appsv1.Deployment {
